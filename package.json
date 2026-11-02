@@ -6,7 +6,8 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test"
+    "test": "node --test",
+    "test:playback": "electron scripts/playback-smoke.cjs"
   },
   "devDependencies": {
     "electron": "^45.2.1"

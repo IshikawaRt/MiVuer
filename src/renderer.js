@@ -24,7 +24,8 @@ const state = {
   routeId: null,
   marker: null,
   currentPosition: null,
-  copyErrors: []
+  copyErrors: [],
+  loadController: null
 };
 
 function showNotice(message, type = '') {
@@ -175,7 +176,7 @@ function adoptScan(scan) {
   if (!scan.groups.length) ui['record-list'].innerHTML = '<div class="empty-state">選択したフォルダー直下に録画が見つかりません。Event・Normal・Triplapseの親を選択してください。</div>';
 }
 
-async function loadVideo(video, filePath, emptyElement) {
+async function loadVideo(video, filePath, emptyElement, signal) {
   video.pause();
   video.removeAttribute('src');
   video.load();
@@ -186,22 +187,49 @@ async function loadVideo(video, filePath, emptyElement) {
   emptyElement.hidden = false;
   emptyElement.textContent = '動画を準備しています…';
   const url = await window.miovuer.getPlayableFile(filePath);
-  video.src = url;
+  signal.throwIfAborted();
+  const camera = video.id === 'video-front' ? '前方' : '後方';
+  const filename = filePath.split(/[\\/]/).at(-1);
   await new Promise((resolve, reject) => {
     const done = () => { cleanup(); resolve(); };
-    const fail = () => { cleanup(); reject(new Error('動画を開けませんでした。ファイル形式またはアクセス権を確認してください。')); };
-    const cleanup = () => {
-      video.removeEventListener('loadedmetadata', done);
-      video.removeEventListener('error', fail);
+    const fail = () => {
+      const mediaError = video.error;
+      const reasons = {
+        1: '読み込みが中断されました',
+        2: '動画ファイルを読み取れません',
+        3: '映像または音声をデコードできません',
+        4: '動画の形式またはコーデックが未対応です'
+      };
+      cleanup();
+      reject(new Error(`${camera}: ${filename} — ${reasons[mediaError?.code] ?? '動画の読み込みに失敗しました'}${mediaError ? ` (code=${mediaError.code}: ${mediaError.message})` : ''}`));
     };
-    video.addEventListener('loadedmetadata', done, { once: true });
+    const abort = () => { cleanup(); reject(signal.reason); };
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`${camera}: ${filename} — 動画の読み込みがタイムアウトしました。ドライブの接続状態を確認してください。`));
+    }, 30000);
+    const cleanup = () => {
+      clearTimeout(timeout);
+      video.removeEventListener('loadeddata', done);
+      video.removeEventListener('error', fail);
+      signal.removeEventListener('abort', abort);
+    };
+    video.addEventListener('loadeddata', done, { once: true });
     video.addEventListener('error', fail, { once: true });
+    signal.addEventListener('abort', abort, { once: true });
+    video.preload = 'auto';
+    video.src = url;
     video.load();
   });
+  signal.throwIfAborted();
   emptyElement.hidden = true;
 }
 
 async function selectRecording(group, autoplay = false) {
+  state.loadController?.abort();
+  const controller = new AbortController();
+  state.loadController = controller;
+  const { signal } = controller;
   const index = state.visibleGroups.findIndex(item => item.id === group.id);
   if (index >= 0) state.currentIndex = index;
   state.selected = group;
@@ -217,9 +245,10 @@ async function selectRecording(group, autoplay = false) {
   renderRecordList();
   try {
     await Promise.all([
-      loadVideo(ui['video-front'], group.front, ui['front-empty']),
-      loadVideo(ui['video-rear'], group.rear, ui['rear-empty'])
+      loadVideo(ui['video-front'], group.front, ui['front-empty'], signal),
+      loadVideo(ui['video-rear'], group.rear, ui['rear-empty'], signal)
     ]);
+    signal.throwIfAborted();
     ui['video-front'].muted = false;
     ui['video-rear'].muted = true;
     ui['video-front'].currentTime = 0;
@@ -232,6 +261,9 @@ async function selectRecording(group, autoplay = false) {
     if (autoplay) await play();
     showNotice('前後動画を読み込みました。録画ファイルは読み取り専用で扱っています。', 'success');
   } catch (error) {
+    if (signal.aborted) return;
+    controller.abort();
+    pause();
     ui['playback-state'].textContent = '読み込みエラー';
     showNotice(error.message, 'error');
   }
