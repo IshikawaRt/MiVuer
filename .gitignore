@@ -1,0 +1,5 @@
+/Data/
+node_modules/
+dist/
+*.partial
+npm-debug.log*

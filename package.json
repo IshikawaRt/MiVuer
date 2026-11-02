@@ -1,0 +1,19 @@
+{
+  "name": "miomivuer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows desktop viewer for Mio MiVue dashcam recordings",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "leaflet": "^1.9.4"
+  }
+}

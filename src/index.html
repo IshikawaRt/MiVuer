@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' file: data: https://*.tile.openstreetmap.org; connect-src 'self' https://*.tile.openstreetmap.org; media-src 'self' file: blob:">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MiVue Vuer</title>
+  <link rel="stylesheet" href="../node_modules/leaflet/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="../node_modules/leaflet/dist/leaflet.js"></script>
+  <script defer src="renderer.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">M</span><div><strong>MiVue Vuer</strong><small>DRIVE DATA STUDIO</small></div></div>
+    <div class="source-area"><span id="source-name">データフォルダーが選択されていません</span><button id="open-source" class="button button-primary">フォルダーを開く</button></div>
+  </header>
+
+  <main class="app-grid">
+    <aside class="library panel">
+      <div class="panel-heading"><div><span class="eyebrow">LIBRARY</span><h2>録画ライブラリ</h2></div><span id="record-count" class="count-pill">0</span></div>
+      <div class="search-fields">
+        <label>開始日時 (JST)<input id="filter-from" type="datetime-local" step="1"></label>
+        <label>終了日時 (JST)<input id="filter-to" type="datetime-local" step="1"></label>
+        <div class="filter-options">
+          <label><input type="checkbox" class="category-filter" value="Normal" checked> 通常</label>
+          <label><input type="checkbox" class="category-filter" value="Event" checked> イベント</label>
+          <label><input type="checkbox" class="category-filter" value="Triplapse" checked> タイムラプス</label>
+        </div>
+        <div class="camera-options">
+          <label><input id="filter-front" type="checkbox" checked> 前方あり</label>
+          <label><input id="filter-rear" type="checkbox"> 後方あり</label>
+          <label><input id="filter-gps" type="checkbox"> GPSあり</label>
+        </div>
+        <button id="apply-filter" class="button button-secondary full-width">検索</button>
+      </div>
+      <div class="list-caption"><span>撮影日時</span><span>前 / 後 / GPS</span></div>
+      <div id="record-list" class="record-list"><div class="empty-state">フォルダーを開いて録画を読み込みます</div></div>
+      <div class="library-footer"><span id="gap-summary">録画間の空白を検出します</span><button id="copy-open" class="text-button">SDカードをコピー</button></div>
+    </aside>
+
+    <section class="workspace">
+      <section class="player-panel panel">
+        <div class="player-header">
+          <div><span class="eyebrow">PLAYBACK</span><h2 id="playing-title">録画を選択してください</h2></div>
+          <span id="playback-state" class="status-tag">待機中</span>
+        </div>
+        <div class="video-grid">
+          <div class="video-cell"><span class="camera-label">FRONT <small>前方</small></span><video id="video-front" playsinline preload="metadata"></video><div id="front-empty" class="video-empty">前方カメラ</div></div>
+          <div class="video-cell"><span class="camera-label">REAR <small>後方</small></span><video id="video-rear" playsinline preload="metadata"></video><div id="rear-empty" class="video-empty">後方カメラなし</div></div>
+        </div>
+        <div class="transport">
+          <div class="transport-buttons">
+            <button id="previous" class="icon-button" title="前の録画">|◀</button>
+            <button id="play-toggle" class="play-button" title="再生">▶</button>
+            <button id="next" class="icon-button" title="次の録画">▶|</button>
+            <button id="mute-toggle" class="icon-button" title="ミュート">🔊</button>
+            <span id="clock-label" class="time-label">--:--:--</span>
+            <span id="gap-label" class="gap-label"></span>
+          </div>
+          <input id="seek" type="range" min="0" max="1000" value="0" aria-label="再生位置">
+          <div class="timeline-meta"><span id="elapsed">00:00</span><div id="timeline" class="timeline"></div><span id="duration">00:00</span></div>
+        </div>
+      </section>
+
+      <section class="telemetry-grid">
+        <div class="telemetry-card panel">
+          <div class="panel-heading compact"><div><span class="eyebrow">TELEMETRY</span><h2>走行データ</h2></div><span id="gps-status" class="muted">GPS未読込</span></div>
+          <div class="metrics">
+            <div class="metric speed"><span>速度</span><strong id="speed">--</strong><small>km/h</small></div>
+            <div class="metric"><span>緯度</span><strong id="latitude">--</strong></div>
+            <div class="metric"><span>経度</span><strong id="longitude">--</strong></div>
+            <div class="metric"><span>高度</span><strong id="altitude">--</strong><small>m</small></div>
+            <div class="metric"><span>進行方位</span><strong id="course">--</strong><small>°</small></div>
+          </div>
+          <canvas id="speed-chart" height="96" aria-label="速度グラフ"></canvas>
+        </div>
+        <div class="map-card panel">
+          <div class="panel-heading compact"><div><span class="eyebrow">ROUTE</span><h2>走行ルート</h2></div><button id="open-map" class="text-button" disabled>地図を開く ↗</button></div>
+          <div id="map"><div class="map-placeholder">GPSデータを読み込むと走行ルートを表示します</div></div>
+        </div>
+      </section>
+
+      <footer class="action-bar panel">
+        <div class="trim-controls">
+          <div><span class="eyebrow">EXPORT CLIP</span><strong>選択中の録画をトリミング</strong></div>
+          <label>開始(秒)<input id="trim-start" type="number" min="0" step="0.1" value="0"></label>
+          <label>終了(秒)<input id="trim-end" type="number" min="0" step="0.1" placeholder="動画の終端"></label>
+          <label class="select-label">カメラ<select id="trim-camera"><option value="both">前後カメラ</option><option value="front">前方のみ</option><option value="rear">後方のみ</option></select></label>
+          <label class="select-label">出力<select id="trim-mode"><option value="copy">高速・映像無再エンコード</option><option value="precise">開始位置を優先</option></select></label>
+          <button id="trim-save" class="button button-primary" disabled>切り出して保存</button>
+        </div>
+        <div id="notice" class="notice" role="status">前後のMP4はブラウザー再生用に一時変換し、元データは変更しません。</div>
+      </footer>
+    </section>
+  </main>
+
+  <dialog id="copy-dialog" class="modal">
+    <form method="dialog" class="modal-card" id="copy-form">
+      <div class="panel-heading"><div><span class="eyebrow">SAFE COPY</span><h2>SDカードからコピー</h2></div><button class="close-button" value="cancel" aria-label="閉じる">×</button></div>
+      <p class="modal-intro">元データは削除されません。中断後は同じコピー先を指定すると続きから再開し、コピー後にSHA-256を検証します。</p>
+      <div class="path-picker"><label>コピー元<input id="copy-source" readonly placeholder="SDカードのルートフォルダー"></label><button id="choose-copy-source" type="button" class="button button-secondary">選択</button></div>
+      <div class="path-picker"><label>コピー先<input id="copy-destination" readonly placeholder="PC側の保存先"></label><button id="choose-copy-destination" type="button" class="button button-secondary">選択</button></div>
+      <div class="copy-categories"><label><input type="checkbox" value="Normal" checked> 通常</label><label><input type="checkbox" value="Event" checked> イベント</label><label><input type="checkbox" value="Triplapse" checked> タイムラプス</label></div>
+      <div class="copy-progress"><div class="progress-label"><span id="copy-status">コピー待機中</span><span id="copy-percent">0%</span></div><progress id="copy-progress" max="100" value="0"></progress></div>
+      <div class="modal-actions"><button id="copy-start" type="button" class="button button-primary">コピー開始</button><button id="copy-close" type="button" class="button button-secondary">閉じる</button></div>
+      <div id="copy-errors" class="copy-errors"></div>
+    </form>
+  </dialog>
+</body>
+</html>
