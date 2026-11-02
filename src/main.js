@@ -31,6 +31,27 @@ function createWindow() {
       backgroundThrottling: false
     }
   });
+  mainWindow.webContents.setWindowOpenHandler(({ url, frameName }) => {
+    if (url !== 'about:blank' || !['view-player', 'view-telemetry', 'view-route'].includes(frameName)) {
+      return { action: 'deny' };
+    }
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        show: true,
+        width: 1200, height: 800, minWidth: 600, minHeight: 400,
+        backgroundColor: '#0b1118',
+        webPreferences: {
+          nodeIntegration: false, contextIsolation: true, sandbox: true,
+          backgroundThrottling: false
+        }
+      }
+    };
+  });
+  mainWindow.webContents.on('did-create-window', child => {
+    child.webContents.setBackgroundThrottling(false);
+    child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  });
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 }
 

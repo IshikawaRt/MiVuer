@@ -41,10 +41,10 @@
     </aside>
 
     <section class="workspace">
-      <section class="player-panel panel">
+      <section id="view-player" class="player-panel panel">
         <div class="player-header">
           <div><span class="eyebrow">PLAYBACK</span><h2 id="playing-title">録画を選択してください</h2></div>
-          <span id="playback-state" class="status-tag">待機中</span>
+          <div class="view-actions"><span id="playback-state" class="status-tag">待機中</span><button class="text-button popout-button" data-view="view-player">別ウィンドウ ↗</button></div>
         </div>
         <div class="video-grid">
           <div class="video-cell"><span class="camera-label">FRONT <small>前方</small></span><video id="video-front" playsinline preload="metadata"></video><div id="front-empty" class="video-empty">前方カメラ</div></div>
@@ -65,8 +65,8 @@
       </section>
 
       <section class="telemetry-grid">
-        <div class="telemetry-card panel">
-          <div class="panel-heading compact"><div><span class="eyebrow">TELEMETRY</span><h2>走行データ</h2></div><span id="gps-status" class="muted">GPS未読込</span></div>
+        <div id="view-telemetry" class="telemetry-card panel">
+          <div class="panel-heading compact"><div><span class="eyebrow">TELEMETRY</span><h2>走行データ</h2></div><div class="view-actions"><span id="gps-status" class="muted">GPS未読込</span><button class="text-button popout-button" data-view="view-telemetry">別ウィンドウ ↗</button></div></div>
           <div class="metrics">
             <div class="metric speed"><span>速度</span><strong id="speed">--</strong><small>km/h</small></div>
             <div class="metric"><span>緯度</span><strong id="latitude">--</strong></div>
@@ -78,8 +78,8 @@
           <div class="g-legend"><span>加速度 (G)</span><span class="g-x">X <b id="g-x">--</b></span><span class="g-y">Y <b id="g-y">--</b></span><span class="g-z">Z <b id="g-z">--</b></span><span id="g-status">未読込</span></div>
           <canvas id="g-chart" height="96" aria-label="XYZ加速度グラフ"></canvas>
         </div>
-        <div class="map-card panel">
-          <div class="panel-heading compact"><div><span class="eyebrow">ROUTE</span><h2>走行ルート</h2></div><button id="open-map" class="text-button" disabled>地図を開く ↗</button></div>
+        <div id="view-route" class="map-card panel">
+          <div class="panel-heading compact"><div><span class="eyebrow">ROUTE</span><h2>走行ルート</h2></div><div class="view-actions"><button id="open-map" class="text-button" disabled>地図を開く ↗</button><button class="text-button popout-button" data-view="view-route">別ウィンドウ ↗</button></div></div>
           <div id="map"><div class="map-placeholder">GPSデータを読み込むと走行ルートを表示します</div></div>
         </div>
       </section>

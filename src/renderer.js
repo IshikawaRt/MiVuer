@@ -314,7 +314,7 @@ function prepareNextRecording() {
   if (!next) return;
   const controller = new AbortController();
   const videos = ['front', 'rear'].map(camera => {
-    const video = document.createElement('video');
+    const video = ui[`video-${camera}`].ownerDocument.createElement('video');
     video.playsInline = true;
     video.preload = 'auto';
     video.muted = true;
@@ -517,7 +517,7 @@ function drawGChart() {
   const canvas = ui['g-chart'];
   const bounds = canvas.getBoundingClientRect();
   if (!bounds.width || !bounds.height) return;
-  const ratio = window.devicePixelRatio || 1;
+  const ratio = canvas.ownerDocument.defaultView.devicePixelRatio || 1;
   canvas.width = Math.round(bounds.width * ratio);
   canvas.height = Math.round(bounds.height * ratio);
   const context = canvas.getContext('2d');
@@ -576,7 +576,7 @@ function drawChart() {
   const canvas = ui['speed-chart'];
   const bounds = canvas.getBoundingClientRect();
   if (!bounds.width || !bounds.height) return;
-  const ratio = window.devicePixelRatio || 1;
+  const ratio = canvas.ownerDocument.defaultView.devicePixelRatio || 1;
   canvas.width = Math.round(bounds.width * ratio);
   canvas.height = Math.round(bounds.height * ratio);
   const context = canvas.getContext('2d');
@@ -617,7 +617,8 @@ function drawChart() {
 }
 
 function updateMap() {
-  if (!window.L) {
+  const leaflet = ui.map.ownerDocument.defaultView.L;
+  if (!leaflet) {
     ui['open-map'].disabled = true;
     if (ui.map.dataset.mapReady !== 'true') {
       ui.map.innerHTML = '<div class="map-placeholder">地図ライブラリを読み込めません。インターネット接続を確認してください。</div>';
@@ -639,9 +640,9 @@ function updateMap() {
     ui.map.innerHTML = '';
     ui.map.dataset.mapReady = 'true';
     const firstPoint = state.selected.gps[0];
-    state.map = window.L.map(ui.map, { zoomControl: true, attributionControl: true })
+    state.map = leaflet.map(ui.map, { zoomControl: true, attributionControl: true })
       .setView([firstPoint.latitude, firstPoint.longitude], 14, { animate: false });
-    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    leaflet.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(state.map);
@@ -649,7 +650,7 @@ function updateMap() {
   if (state.routeId !== state.selected.id) {
     const route = state.selected.gps.map(point => [point.latitude, point.longitude]);
     if (state.route) state.route.remove();
-    state.route = window.L.polyline(route, { color: '#ff843c', weight: 3, opacity: 0.8 }).addTo(state.map);
+    state.route = leaflet.polyline(route, { color: '#ff843c', weight: 3, opacity: 0.8 }).addTo(state.map);
     state.routeId = state.selected.id;
   }
   if (!state.currentPosition) {
@@ -661,7 +662,7 @@ function updateMap() {
     return;
   }
   const location = [state.currentPosition.latitude, state.currentPosition.longitude];
-  if (!state.marker) state.marker = window.L.circleMarker(location, { radius: 6, color: '#f4e3d6', fillColor: '#ff843c', fillOpacity: 1 }).addTo(state.map);
+  if (!state.marker) state.marker = leaflet.circleMarker(location, { radius: 6, color: '#f4e3d6', fillColor: '#ff843c', fillOpacity: 1 }).addTo(state.map);
   else state.marker.setLatLng(location);
   const zoom = state.map.getZoom();
   state.map.setView(location, Number.isFinite(zoom) ? Math.max(zoom, 14) : 14, { animate: false });
@@ -811,6 +812,143 @@ window.miovuer.onCopyFileComplete(file => {
 window.miovuer.onCopyFileError(file => {
   state.copyErrors.push(`${file.source}: ${file.error}`);
   ui['copy-errors'].textContent = state.copyErrors.join('\n');
+});
+
+const detachedViews = new Map();
+let closingApplication = false;
+
+async function restorePlayer(group, seconds, wasPlaying) {
+  state.loadController?.abort();
+  const controller = new AbortController();
+  state.loadController = controller;
+  try {
+    await Promise.all(['front', 'rear'].map(camera =>
+      loadVideo(ui[`video-${camera}`], group[camera], ui[`${camera}-empty`], controller.signal)));
+    controller.signal.throwIfAborted();
+    seekTo(seconds);
+    ui['playback-state'].textContent = '一時停止';
+    prepareNextRecording();
+    if (wasPlaying) await play();
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    pause();
+    showNotice(`再生画面を戻せませんでした: ${error.message}`, 'error');
+  }
+}
+
+function refreshViewSizes() {
+  drawChart();
+  drawGChart();
+  state.map?.invalidateSize();
+}
+
+function resetRouteView() {
+  state.map?.remove();
+  state.map = null;
+  state.route = null;
+  state.routeId = null;
+  state.marker = null;
+}
+
+function detachView(id) {
+  const existing = detachedViews.get(id);
+  if (existing) { existing.window.focus(); return; }
+  const panel = document.getElementById(id);
+  const button = panel.querySelector('.popout-button');
+  const title = panel.querySelector('h2')?.textContent ?? 'プレイバック';
+  const child = window.open('about:blank', id, 'width=1200,height=800');
+  if (!child) {
+    showNotice('別ウィンドウを開けませんでした。', 'error');
+    return;
+  }
+  if (id === 'view-player') cancelCrossfade();
+  if (id === 'view-route') resetRouteView();
+  const placeholder = document.createElement('section');
+  placeholder.className = 'panel detached-placeholder';
+  const label = document.createElement('span');
+  label.textContent = `${title}は別ウィンドウに表示中です`;
+  const focus = document.createElement('button');
+  focus.className = 'button button-secondary';
+  focus.textContent = 'ウィンドウを表示';
+  focus.onclick = () => child.focus();
+  const restore = document.createElement('button');
+  restore.className = 'button button-secondary';
+  restore.textContent = '元の画面へ戻す';
+  restore.onclick = () => child.close();
+  placeholder.append(label, focus, restore);
+  panel.replaceWith(placeholder);
+  child.document.title = `${title} — MiVue Vuer`;
+  for (const source of document.querySelectorAll('link[rel="stylesheet"]')) {
+    const link = child.document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = source.href;
+    link.onload = refreshViewSizes;
+    child.document.head.append(link);
+  }
+  child.document.body.className = 'detached-view';
+  child.document.body.append(panel);
+  if (id === 'view-route') {
+    const script = child.document.createElement('script');
+    script.src = document.querySelector('script[src$="leaflet.js"]').src;
+    script.onload = () => { updateMap(); refreshViewSizes(); };
+    script.onerror = () => showNotice('別ウィンドウの地図ライブラリを読み込めませんでした。画面を戻して再度開いてください。', 'error');
+    child.document.head.append(script);
+  }
+  button.textContent = '元の画面へ戻す';
+  detachedViews.set(id, { window: child });
+  child.addEventListener('resize', refreshViewSizes);
+  child.addEventListener('beforeunload', () => {
+    if (closingApplication) return;
+    const group = state.selected;
+    const wasPlaying = state.playing;
+    const seconds = (group?.front ? ui['video-front'] : ui['video-rear']).currentTime;
+    if (id === 'view-player') {
+      pause();
+      discardPrepared();
+    }
+    if (id === 'view-route') resetRouteView();
+    placeholder.replaceWith(panel);
+    if (id === 'view-player') {
+      for (const camera of ['front', 'rear']) {
+        const old = ui[`video-${camera}`];
+        const video = document.createElement('video');
+        video.id = old.id;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.muted = camera === 'rear' || ui['mute-toggle'].textContent === '🔇';
+        old.replaceWith(video);
+        old.removeAttribute('src');
+        old.load();
+        ui[`video-${camera}`] = video;
+        bindVideoEvents(video);
+      }
+    }
+    button.textContent = '別ウィンドウ ↗';
+    detachedViews.delete(id);
+    if (id === 'view-route') updateMap();
+    requestAnimationFrame(refreshViewSizes);
+    if (id === 'view-player' && group) {
+      setTimeout(() => {
+        if (state.selected === group && panel.ownerDocument === document) {
+          restorePlayer(group, seconds, wasPlaying);
+        }
+      }, 0);
+    }
+  }, { once: true });
+  requestAnimationFrame(refreshViewSizes);
+  if (id === 'view-player' && state.playing) play();
+}
+
+for (const button of document.querySelectorAll('.popout-button')) {
+  button.addEventListener('click', () => {
+    const detached = detachedViews.get(button.dataset.view);
+    if (detached) detached.window.close();
+    else detachView(button.dataset.view);
+  });
+}
+window.addEventListener('beforeunload', () => {
+  closingApplication = true;
+  for (const { window: child } of detachedViews.values()) child.close();
 });
 
 function togglePanel(panelId, buttonId) {
