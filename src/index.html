@@ -13,7 +13,7 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">M</span><div><strong>MiVue Vuer</strong><small>DRIVE DATA STUDIO</small></div></div>
-    <div class="source-area"><span id="source-name">データフォルダーが選択されていません</span><button id="open-source" class="button button-primary">フォルダーを開く</button></div>
+    <div class="source-area"><span id="source-name">録画フォルダーが選択されていません</span><button id="open-source" class="button button-primary">録画フォルダーを開く</button></div>
   </header>
 
   <main class="app-grid">
@@ -35,7 +35,7 @@
         <button id="apply-filter" class="button button-secondary full-width">検索</button>
       </div>
       <div class="list-caption"><span>撮影日時</span><span>前 / 後 / GPS</span></div>
-      <div id="record-list" class="record-list"><div class="empty-state">フォルダーを開いて録画を読み込みます</div></div>
+      <div id="record-list" class="record-list"><div class="empty-state">Event・Normal・Triplapseの親フォルダーを選択します</div></div>
       <div class="library-footer"><span id="gap-summary">録画間の空白を検出します</span><button id="copy-open" class="text-button">SDカードをコピー</button></div>
     </aside>
 
@@ -99,8 +99,8 @@
     <form method="dialog" class="modal-card" id="copy-form">
       <div class="panel-heading"><div><span class="eyebrow">SAFE COPY</span><h2>SDカードからコピー</h2></div><button class="close-button" value="cancel" aria-label="閉じる">×</button></div>
       <p class="modal-intro">元データは削除されません。中断後は同じコピー先を指定すると続きから再開し、コピー後にSHA-256を検証します。</p>
-      <div class="path-picker"><label>コピー元<input id="copy-source" readonly placeholder="SDカードのルートフォルダー"></label><button id="choose-copy-source" type="button" class="button button-secondary">選択</button></div>
-      <div class="path-picker"><label>コピー先<input id="copy-destination" readonly placeholder="PC側の保存先"></label><button id="choose-copy-destination" type="button" class="button button-secondary">選択</button></div>
+      <div class="path-picker"><label>コピー元<input id="copy-source" readonly placeholder="Event・Normal等の親フォルダー"></label><button id="choose-copy-source" type="button" class="button button-secondary">選択</button></div>
+      <div class="path-picker"><label>コピー先<input id="copy-destination" readonly placeholder="PC側の保存先フォルダー"></label><button id="choose-copy-destination" type="button" class="button button-secondary">選択</button></div>
       <div class="copy-categories"><label><input type="checkbox" value="Normal" checked> 通常</label><label><input type="checkbox" value="Event" checked> イベント</label><label><input type="checkbox" value="Triplapse" checked> タイムラプス</label></div>
       <div class="copy-progress"><div class="progress-label"><span id="copy-status">コピー待機中</span><span id="copy-percent">0%</span></div><progress id="copy-progress" max="100" value="0"></progress></div>
       <div class="modal-actions"><button id="copy-start" type="button" class="button button-primary">コピー開始</button><button id="copy-close" type="button" class="button button-secondary">閉じる</button></div>

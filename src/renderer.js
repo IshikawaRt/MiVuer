@@ -159,7 +159,7 @@ async function openSource() {
     showNotice(error.message, 'error');
   } finally {
     ui['open-source'].disabled = false;
-    ui['open-source'].textContent = 'フォルダーを開く';
+    ui['open-source'].textContent = '録画フォルダーを開く';
   }
 }
 
@@ -172,7 +172,7 @@ function adoptScan(scan) {
   const missingRear = scan.groups.filter(group => !group.rear).length;
   const status = `${scan.groups.length}件を読み込みました。前方なし ${missingFront}件、後方なし ${missingRear}件。`;
   showNotice(scan.errors.length ? `${status} 読み込み警告 ${scan.errors.length}件: ${scan.errors[0]}` : status, scan.errors.length ? 'error' : 'success');
-  if (!scan.groups.length) ui['record-list'].innerHTML = '<div class="empty-state">Data/Normal、Data/Event、Data/Triplapse の録画が見つかりません</div>';
+  if (!scan.groups.length) ui['record-list'].innerHTML = '<div class="empty-state">選択したフォルダー直下に録画が見つかりません。Event・Normal・Triplapseの親を選択してください。</div>';
 }
 
 async function loadVideo(video, filePath, emptyElement) {

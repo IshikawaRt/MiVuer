@@ -77,17 +77,19 @@ async function scanRoot(root) {
   recordings.clear();
   const files = [];
   const errors = [];
-  const dataDirectory = path.join(selectedRoot, 'Data');
-  const dataInfo = await fs.lstat(dataDirectory).catch(error => {
-    if (error.code === 'ENOENT') throw new Error('選択したフォルダーにDataフォルダーがありません。');
-    throw error;
+  const rootEntries = await fs.readdir(selectedRoot, { withFileTypes: true }).catch(error => {
+    throw new Error(`選択したフォルダーを読み取れません: ${error.message}`);
   });
-  if (!dataInfo.isDirectory() || dataInfo.isSymbolicLink()) {
-    throw new Error('Dataフォルダーが通常のフォルダーではありません。');
+  const hasRecordingFolder = rootEntries.some(entry =>
+    ['Normal', 'Event', 'Triplapse'].includes(entry.name) && entry.isDirectory());
+  const hasDeviceInfo = rootEntries.some(entry =>
+    entry.name.toLowerCase() === 'device.xml' && entry.isFile());
+  if (!hasRecordingFolder && !hasDeviceInfo) {
+    throw new Error('選択したフォルダーの直下にEvent、Normal、Triplapseのいずれか、またはDEVICE.XMLが見つかりません。');
   }
   for (const category of ['Normal', 'Event', 'Triplapse']) {
     for (const camera of ['F', 'R', 'NMEA']) {
-      const dir = path.join(selectedRoot, 'Data', category, camera);
+      const dir = path.join(selectedRoot, category, camera);
       let names;
       try {
         const directoryInfo = await fs.lstat(dir);
@@ -161,10 +163,10 @@ async function getPlayableFile(filePath) {
         await fs.access(cached);
       } catch (error) {
         if (error.code !== 'ENOENT') throw error;
-        const temporary = `${cached}.partial`;
+        const temporary = cached.replace(/\.mp4$/i, '.partial.mp4');
         try {
           await runProcess(ffmpegPath, [
-            '-y', '-i', source, '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'copy',
+            '-y', '-i', source, '-map', '0:v:0', '-map', '0:a:0?', '-dn', '-c:v', 'copy',
             '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', temporary
           ]);
           await fs.rename(temporary, cached);
@@ -195,7 +197,7 @@ function assertRecordingVideo(recordingId, camera) {
 
 ipcMain.handle('pick-root', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'SDカードまたはコピー済みフォルダーを選択',
+    title: 'Event・Normal・Triplapse・DEVICE.XMLの親フォルダーを選択',
     properties: ['openDirectory']
   });
   if (result.canceled || !result.filePaths[0]) return null;
@@ -205,7 +207,7 @@ ipcMain.handle('pick-root', async () => {
 
 ipcMain.handle('select-root', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'コピー元フォルダーを選択',
+    title: 'コピー元の録画フォルダー（Event・Normal等の親）を選択',
     properties: ['openDirectory']
   });
   if (result.canceled) return null;
@@ -230,12 +232,13 @@ ipcMain.handle('copy-data', async (event, sourceRoot, destinationRoot, categorie
   if (!userSelectedDirectories.has(source) || !userSelectedDirectories.has(destination)) {
     throw new Error('コピー元とコピー先は、アプリのフォルダー選択画面から選択してください。');
   }
-  const sourceDataInfo = await fs.lstat(path.join(source, 'Data')).catch(error => {
-    if (error.code === 'ENOENT') throw new Error('コピー元にDataフォルダーがありません。');
-    throw error;
+  const sourceEntries = await fs.readdir(source, { withFileTypes: true }).catch(error => {
+    throw new Error(`コピー元を読み取れません: ${error.message}`);
   });
-  if (!sourceDataInfo.isDirectory() || sourceDataInfo.isSymbolicLink()) {
-    throw new Error('コピー元のDataが通常のフォルダーではありません。');
+  if (!sourceEntries.some(entry =>
+    ['Normal', 'Event', 'Triplapse'].includes(entry.name) && entry.isDirectory()) &&
+      !sourceEntries.some(entry => entry.name.toLowerCase() === 'device.xml' && entry.isFile())) {
+    throw new Error('コピー元の直下にEvent、Normal、Triplapse、DEVICE.XMLが見つかりません。');
   }
   const destinationRelative = path.relative(source, destination);
   const destinationIsInsideSource = destinationRelative === '' ||
@@ -245,7 +248,7 @@ ipcMain.handle('copy-data', async (event, sourceRoot, destinationRoot, categorie
     throw new Error('コピー先はコピー元フォルダーの外側を指定してください。');
   }
   const report = [];
-  const deviceInfo = path.join(source, 'Data', 'DEVICE.XML');
+  const deviceInfo = path.join(source, 'DEVICE.XML');
   let hasDeviceInfo = true;
   try {
     await fs.access(deviceInfo);
@@ -259,19 +262,19 @@ ipcMain.handle('copy-data', async (event, sourceRoot, destinationRoot, categorie
       if (!deviceInfoEntry.isFile() || deviceInfoEntry.isSymbolicLink()) {
         throw new Error('デバイス情報が通常のファイルではありません。');
       }
-      const result = await copyWithResume(deviceInfo, path.join(destination, 'Data', 'DEVICE.XML'), (copied, total) => {
+      const result = await copyWithResume(deviceInfo, path.join(destination, 'DEVICE.XML'), (copied, total) => {
         event.sender.send('copy-progress', { source: deviceInfo, copied, total });
       });
-      report.push({ source: deviceInfo, destination: path.join(destination, 'Data', 'DEVICE.XML'), status: 'verified', ...result });
+      report.push({ source: deviceInfo, destination: path.join(destination, 'DEVICE.XML'), status: 'verified', ...result });
       event.sender.send('copy-file-complete', report.at(-1));
     } catch (error) {
-      report.push({ source: deviceInfo, destination: path.join(destination, 'Data', 'DEVICE.XML'), status: 'error', error: error.message });
+      report.push({ source: deviceInfo, destination: path.join(destination, 'DEVICE.XML'), status: 'error', error: error.message });
       event.sender.send('copy-file-error', report.at(-1));
     }
   }
   for (const category of categories) {
     if (!['Normal', 'Event', 'Triplapse'].includes(category)) throw new Error('不明な録画カテゴリーです。');
-    const directory = path.join(source, 'Data', category);
+    const directory = path.join(source, category);
     try {
       const directoryInfo = await fs.lstat(directory);
       if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) {
