@@ -52,6 +52,17 @@ test('parses RMC coordinates and converts UTC timestamps to JST', () => {
   assert.equal(points[0].altitude, 24.5);
 });
 
+test('preserves valid course bearings and treats missing or invalid headings as unknown', () => {
+  for (const [field, expected] of [
+    ['0', 0], ['90', 90], ['202.41', 202.41], ['360', 360],
+    ['', null], [' ', null], ['invalid', null], ['-1', null], ['361', null]
+  ]) {
+    const points = parseNmea(
+      `$GNRMC,030312.000,A,3532.9742,N,13932.1646,E,18.81,${field},311026,,,D`);
+    assert.equal(points[0].course, expected);
+  }
+});
+
 test('builds camera pairs and reports missing sides and recording gaps', () => {
   const root = path.resolve('Data\\Normal');
   const files = [

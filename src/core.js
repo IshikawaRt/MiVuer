@@ -75,7 +75,7 @@ function parseNmea(content, recordingStart) {
       const latitude = nmeaCoordinate(fields[3], fields[4]);
       const longitude = nmeaCoordinate(fields[5], fields[6]);
       const speedKnots = Number(fields[7]);
-      const course = Number(fields[8]);
+      const course = fields[8]?.trim() ? Number(fields[8]) : NaN;
       if (latitude === null || longitude === null) continue;
       points.push({
         utcTimestamp,
@@ -83,7 +83,7 @@ function parseNmea(content, recordingStart) {
         latitude,
         longitude,
         speedKmh: Number.isFinite(speedKnots) ? speedKnots * 1.852 : null,
-        course: Number.isFinite(course) ? course : null,
+        course: Number.isFinite(course) && course >= 0 && course <= 360 ? course : null,
         altitude: null
       });
       continue;

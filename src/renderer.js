@@ -650,7 +650,7 @@ function updateMap() {
   if (state.routeId !== state.selected.id) {
     const route = state.selected.gps.map(point => [point.latitude, point.longitude]);
     if (state.route) state.route.remove();
-    state.route = leaflet.polyline(route, { color: '#ff843c', weight: 3, opacity: 0.8 }).addTo(state.map);
+    state.route = leaflet.polyline(route, { color: '#1677ff', weight: 3, opacity: 0.8 }).addTo(state.map);
     state.routeId = state.selected.id;
   }
   if (!state.currentPosition) {
@@ -662,8 +662,26 @@ function updateMap() {
     return;
   }
   const location = [state.currentPosition.latitude, state.currentPosition.longitude];
-  if (!state.marker) state.marker = leaflet.circleMarker(location, { radius: 6, color: '#f4e3d6', fillColor: '#ff843c', fillOpacity: 1 }).addTo(state.map);
+  if (!state.marker) {
+    const icon = leaflet.divIcon({
+      className: 'vehicle-marker',
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+      html: '<svg class="vehicle-heading" width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 L28 28 L16 22 L4 28 Z" fill="#1677ff" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/></svg><span class="vehicle-position-dot" hidden></span>'
+    });
+    state.marker = leaflet.marker(location, { icon, interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(state.map);
+  }
   else state.marker.setLatLng(location);
+  const markerElement = state.marker.getElement();
+  const course = state.currentPosition.course;
+  const hasHeading = Number.isFinite(course) && course >= 0 && course <= 360;
+  const heading = markerElement.querySelector('.vehicle-heading');
+  heading.style.display = hasHeading ? '' : 'none';
+  heading.style.transform = hasHeading ? `rotate(${course}deg)` : '';
+  markerElement.querySelector('.vehicle-position-dot').hidden = hasHeading;
+  markerElement.setAttribute('role', 'img');
+  markerElement.setAttribute('aria-label', hasHeading
+    ? `自車位置・進行方位 ${course.toFixed(0)}度（北が0度）` : '自車位置・進行方位不明');
   const zoom = state.map.getZoom();
   state.map.setView(location, Number.isFinite(zoom) ? Math.max(zoom, 14) : 14, { animate: false });
   ui['open-map'].disabled = false;

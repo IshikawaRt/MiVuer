@@ -241,6 +241,32 @@ app.on('browser-window-created', (_event, window) => {
         const gpsGroup = state.groups.find(group => group.gps?.length > 5);
         if (!gpsGroup) throw new Error('GPS sample required for detached route test');
         await selectRecording(gpsGroup, false);
+        function verifyVehicleMarker() {
+          if (state.route?.getElement()?.getAttribute('stroke') !== '#1677ff') {
+            throw new Error('Route trail does not match the blue vehicle marker');
+          }
+          const position = state.currentPosition;
+          if (!position) throw new Error('GPS position missing for marker test');
+          for (const course of [0, 90, 180, 270, 360, null, NaN, -1, 361]) {
+            state.currentPosition = { ...position, course };
+            updateMap();
+            const element = state.marker.getElement();
+            const heading = element.querySelector('.vehicle-heading');
+            const dot = element.querySelector('.vehicle-position-dot');
+            const valid = Number.isFinite(course) && course >= 0 && course <= 360;
+            if (valid ? heading.style.transform !== 'rotate(' + course + 'deg)' || !dot.hidden
+                      : heading.style.display !== 'none' || dot.hidden) {
+              throw new Error('Vehicle marker heading or unknown-heading fallback is incorrect');
+            }
+            if (heading.querySelector('path').getAttribute('fill') !== '#1677ff' ||
+                element.ownerDocument.defaultView.getComputedStyle(dot).backgroundColor !== 'rgb(22, 119, 255)') {
+              throw new Error('Vehicle marker is not blue');
+            }
+          }
+          state.currentPosition = position;
+          updateMap();
+        }
+        verifyVehicleMarker();
         for (const id of ['view-player', 'view-telemetry', 'view-route']) {
           document.querySelector('[data-view="' + id + '"]').click();
         }
@@ -251,6 +277,7 @@ app.on('browser-window-created', (_event, window) => {
         }
         seekTo(3);
         await new Promise(resolve => setTimeout(resolve, 500));
+        verifyVehicleMarker();
         if (!state.currentPosition ||
             Math.abs(state.marker.getLatLng().lat - state.currentPosition.latitude) > 0.000001 ||
             ui['g-chart'].getBoundingClientRect().height <= 100) {
@@ -290,6 +317,7 @@ app.on('browser-window-created', (_event, window) => {
             !state.map || ui.map.ownerDocument !== document) {
           throw new Error('Repeated restore lost paused state or map');
         }
+        verifyVehicleMarker();
         return { status, notice: ui.notice.textContent, details, overlays, driftSeconds,
           usedPreloadedVideos, firstFrameDelayMs, pauseWorks, autoStarted, preparedBeforeEnd, transitions,
           audioOverlap: {
