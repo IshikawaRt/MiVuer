@@ -9,8 +9,26 @@ const {
   groupGaps,
   nmeaCoordinate,
   parseFilename,
-  parseNmea
+  parseNmea,
+  parseGSensor
 } = require('../src/core');
+
+test('G sensor data remains available with invalid GPS and across midnight', () => {
+  const result = parseGSensor([
+    '$GNRMC,235959.000,V,,,,,,,191122,,,N',
+    '$GSENSORD,0.304,0.196,-0.098,[-0.458,0.052,0.895][0]',
+    '$GNRMC,000000.000,V,,,,,,,201122,,,N',
+    '$GSENSORD,0.033,0.073,0.049,[-0.492,0.056,0.882][0]',
+    '$GSENSORD,,broken,0.049,[0,0,0][0]'
+  ].join('\n'));
+  assert.deepEqual(result.points, [
+    { offset: 0, x: 0.304, y: 0.196, z: -0.098 },
+    { offset: 1, x: 0.033, y: 0.073, z: 0.049 }
+  ]);
+  assert.equal(result.warnings.length, 1);
+  assert.deepEqual(parseGSensor(''), { points: [], warnings: [] });
+  assert.equal(parseGSensor('$GSENSORD,1,2,3,[0,0,0][0]').warnings.length, 1);
+});
 
 test('parses MiVue file timestamps and rejects invalid calendar dates', () => {
   const parsed = parseFilename('FILE261031-120312F.mp4', 'Normal', 'F');

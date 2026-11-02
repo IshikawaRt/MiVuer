@@ -8,7 +8,8 @@ const ui = Object.fromEntries([
   'course', 'speed-chart', 'map', 'open-map', 'trim-start', 'trim-end', 'trim-camera', 'trim-mode',
   'trim-save', 'notice', 'copy-open', 'copy-dialog', 'copy-source', 'copy-destination',
   'choose-copy-source', 'choose-copy-destination', 'copy-start', 'copy-close',
-  'copy-progress', 'copy-percent', 'copy-status', 'copy-errors'
+  'copy-progress', 'copy-percent', 'copy-status', 'copy-errors',
+  'g-chart', 'g-x', 'g-y', 'g-z', 'g-status'
 ].map(id => [id, document.getElementById(id)]));
 
 const state = {
@@ -473,6 +474,7 @@ function updatePlaybackInfo() {
 }
 
 function updateTelemetry() {
+  drawGChart();
   if (!state.selected?.gps?.length) {
     ui['gps-status'].textContent = state.selected?.nmea ? '有効なGPSデータなし' : 'NMEAなし';
     for (const id of ['speed', 'latitude', 'longitude', 'altitude', 'course']) ui[id].textContent = '--';
@@ -508,6 +510,65 @@ function updateTelemetry() {
   ui.course.textContent = point.course === null ? '--' : point.course.toFixed(0);
   updateMap();
   drawChart();
+}
+
+function drawGChart() {
+  const canvas = ui['g-chart'];
+  const bounds = canvas.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(bounds.width * ratio);
+  canvas.height = Math.round(bounds.height * ratio);
+  const context = canvas.getContext('2d');
+  context.scale(ratio, ratio);
+  const points = state.selected?.acceleration ?? [];
+  const video = state.selected?.front ? ui['video-front'] : ui['video-rear'];
+  const elapsed = video.currentTime || 0;
+  const duration = state.selected?.duration || 1;
+  const current = points.reduce((best, point) =>
+    !best || Math.abs(point.offset - elapsed) < Math.abs(best.offset - elapsed) ? point : best, null);
+  const valid = current && Math.abs(current.offset - elapsed) <= 1.5;
+  ui['g-status'].textContent = points.length
+    ? valid ? `${points.length}点` : 'この時刻のG値なし' : 'Gデータなし';
+  for (const axis of ['x', 'y', 'z']) ui[`g-${axis}`].textContent = valid ? current[axis].toFixed(3) : '--';
+  let limit = 0.4;
+  for (const point of points) limit = Math.max(limit, Math.abs(point.x), Math.abs(point.y), Math.abs(point.z));
+  limit = Math.ceil(limit * 10) / 10;
+  const left = 40;
+  const width = Math.max(1, bounds.width - left - 5);
+  const height = bounds.height - 16;
+  const yPosition = value => 8 + (limit - value) / (2 * limit) * height;
+  context.font = '9px monospace';
+  for (const value of [-limit, 0, limit]) {
+    const y = yPosition(value);
+    context.fillStyle = '#8293a3';
+    context.fillText(`${value.toFixed(1)}G`, 0, y + 3);
+    context.strokeStyle = '#283944';
+    context.beginPath();
+    context.moveTo(left, y);
+    context.lineTo(left + width, y);
+    context.stroke();
+  }
+  for (const [axis, color] of [['x', '#51d8ca'], ['y', '#ffce63'], ['z', '#a795ff']]) {
+    context.beginPath();
+    context.strokeStyle = color;
+    context.lineWidth = 1.4;
+    points.forEach((point, index) => {
+      const x = left + point.offset / duration * width;
+      const y = yPosition(point[axis]);
+      if (!index || point.offset - points[index - 1].offset > 1.5) context.moveTo(x, y);
+      else context.lineTo(x, y);
+      context.fillStyle = color;
+      context.fillRect(x - 1, y - 1, 2, 2);
+    });
+    context.stroke();
+  }
+  context.strokeStyle = '#ff843c';
+  context.beginPath();
+  const cursor = left + Math.min(elapsed / duration, 1) * width;
+  context.moveTo(cursor, 0);
+  context.lineTo(cursor, bounds.height);
+  context.stroke();
 }
 
 function drawChart() {
@@ -794,7 +855,7 @@ ui['open-map'].addEventListener('click', async () => {
     await window.miovuer.openExternal(`https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=16/${latitude}/${longitude}`);
   }
 });
-window.addEventListener('resize', drawChart);
+window.addEventListener('resize', () => { drawChart(); drawGChart(); });
 
 if (window.L) {
   window.L.Icon.Default.imagePath = '../node_modules/leaflet/dist/images/';

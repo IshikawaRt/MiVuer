@@ -17,6 +17,17 @@ app.on('browser-window-created', (_event, window) => {
         const autoStarted = state.playing &&
           !ui['video-front'].paused && !ui['video-rear'].paused;
         if (!autoStarted) throw new Error('Opening the folder did not start playback automatically');
+        const sensorPoints = state.selected.acceleration;
+        if (!sensorPoints?.length || ui['g-x'].textContent === '--' ||
+            ui['g-chart'].width === 0) throw new Error('G chart did not render without GPS');
+        seekTo(1);
+        const expectedSensor = sensorPoints.reduce((best, point) =>
+          Math.abs(point.offset - 1) < Math.abs(best.offset - 1) ? point : best);
+        if (ui['g-x'].textContent !== expectedSensor.x.toFixed(3) ||
+            ui['g-y'].textContent !== expectedSensor.y.toFixed(3) ||
+            ui['g-z'].textContent !== expectedSensor.z.toFixed(3)) {
+          throw new Error('G chart values did not follow seeking');
+        }
         pause();
         const firstRow = ui['record-list'].querySelector('.record-row');
         firstRow.click();

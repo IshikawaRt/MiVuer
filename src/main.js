@@ -6,7 +6,7 @@ const { spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('ffprobe-static').path;
-const { buildRecordingGroups, copyWithResume, groupGaps, parseFilename, parseNmea } = require('./core');
+const { buildRecordingGroups, copyWithResume, groupGaps, parseFilename, parseNmea, parseGSensor } = require('./core');
 
 let mainWindow;
 let selectedRoot;
@@ -132,7 +132,11 @@ async function scanRoot(root) {
       }
       if (group.nmea) {
         try {
-          group.gps = parseNmea(await fs.readFile(group.nmea, 'utf8'), group.start);
+          const content = await fs.readFile(group.nmea, 'utf8');
+          group.gps = parseNmea(content, group.start);
+          const sensor = parseGSensor(content);
+          group.acceleration = sensor.points;
+          errors.push(...sensor.warnings.map(warning => `${group.nmea}: ${warning}`));
         } catch (error) {
           errors.push(`${group.nmea}: ${error.message}`);
         }

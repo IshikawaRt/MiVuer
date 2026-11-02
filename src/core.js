@@ -117,6 +117,40 @@ function parseNmea(content, recordingStart) {
   return points;
 }
 
+function parseGSensor(content) {
+  const points = [];
+  const warnings = [];
+  let firstClock = null;
+  let previousClock = null;
+  let dayOffset = 0;
+  let offset = null;
+  for (const [index, line] of content.split(/\r?\n/).entries()) {
+    const fields = line.trim().split(',');
+    if (fields[0]?.endsWith('RMC')) {
+      const match = /^(\d{2})(\d{2})(\d{2}(?:\.\d+)?)$/.exec(fields[1] ?? '');
+      offset = null;
+      if (!match) continue;
+      const [, hours, minutes, seconds] = match.map(Number);
+      if (hours > 23 || minutes > 59 || seconds >= 60) continue;
+      const clock = hours * 3600 + minutes * 60 + seconds;
+      if (previousClock !== null && previousClock - clock > 43200) dayOffset += 86400;
+      previousClock = clock;
+      if (firstClock === null) firstClock = clock;
+      offset = clock + dayOffset - firstClock;
+    } else if (fields[0] === '$GSENSORD') {
+      const values = fields.slice(1, 4);
+      if (offset === null || offset < 0 || values.length !== 3 ||
+          values.some(value => value.trim() === '' || !Number.isFinite(Number(value)))) {
+        warnings.push(`行${index + 1}: Gセンサー値または対応時刻が不正です。`);
+        continue;
+      }
+      const [x, y, z] = values.map(Number);
+      points.push({ offset, x, y, z });
+    }
+  }
+  return { points, warnings };
+}
+
 function matchTime(timestamp) {
   const date = new Date(timestamp);
   return `${String(date.getUTCHours()).padStart(2, '0')}${String(date.getUTCMinutes()).padStart(2, '0')}${String(date.getUTCSeconds()).padStart(2, '0')}`;
@@ -222,5 +256,6 @@ module.exports = {
   groupGaps,
   nmeaCoordinate,
   parseFilename,
-  parseNmea
+  parseNmea,
+  parseGSensor
 };

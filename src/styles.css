@@ -94,6 +94,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 11px; ma
 .metric.speed { grid-row: span 2; justify-content: center; }
 .metric.speed strong { font-size: 31px; letter-spacing: -.08em; color: var(--accent); }
 #speed-chart { width: calc(100% - 25px); height: 80px; margin: 3px 12px 7px; }
+.telemetry-card { overflow-y: auto; }
+.g-legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 12px; font-size: 9px; color: var(--muted); }
+.g-x { color: #51d8ca; }
+.g-y { color: #ffce63; }
+.g-z { color: #a795ff; }
+#g-chart { width: calc(100% - 25px); height: 90px; margin: 3px 12px 7px; }
 #map { height: calc(100% - 52px); min-height: 155px; background: #0e171c; position: relative; }
 .map-placeholder { height: 100%; display: grid; place-items: center; padding: 20px; text-align: center; color: #72828e; font-size: 10px; }
 .action-bar { padding: 9px 13px 7px; }
