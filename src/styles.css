@@ -23,7 +23,13 @@ button { cursor: pointer; }
 .brand small { display: block; color: var(--muted); font: 9px 'DM Mono', monospace; letter-spacing: .14em; margin-top: 2px; }
 .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: #111820; background: var(--accent); font-weight: 800; font-size: 20px; }
 .source-area { display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: 12px; }
+.source-area { min-width: 0; gap: 8px; margin-left: 18px; }
+#source-name { min-width: 0; max-width: 280px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.source-area .button { flex-shrink: 0; }
+.button[aria-expanded="true"] { border-color: var(--accent); }
 .app-grid { display: grid; grid-template-columns: 310px minmax(0, 1fr); height: calc(100vh - 66px); gap: 14px; padding: 14px; }
+#search-panel[hidden], #trim-panel[hidden] { display: none; }
+.search-toggle { margin: 0 16px 10px; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .library { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; padding: 16px 17px 12px; }

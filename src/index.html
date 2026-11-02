@@ -13,13 +13,14 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">M</span><div><strong>MiVue Vuer</strong><small>DRIVE DATA STUDIO</small></div></div>
-    <div class="source-area"><span id="source-name">録画フォルダーが選択されていません</span><button id="open-source" class="button button-primary">録画フォルダーを開く</button></div>
+    <div class="source-area"><span id="source-name">録画フォルダーが選択されていません</span><button id="trim-toggle" class="button button-secondary" aria-controls="trim-panel" aria-expanded="false">トリミング</button><button id="copy-open" class="button button-secondary">SDカードをコピー</button><button id="open-source" class="button button-primary">録画フォルダーを開く</button></div>
   </header>
 
-  <main class="app-grid">
-    <aside class="library panel">
+  <main id="app-layout" class="app-grid">
+    <aside id="library-panel" class="library panel">
       <div class="panel-heading"><div><span class="eyebrow">LIBRARY</span><h2>録画ライブラリ</h2></div><span id="record-count" class="count-pill">0</span></div>
-      <div class="search-fields">
+      <button id="search-toggle" class="button button-secondary search-toggle" aria-controls="search-panel" aria-expanded="false">検索条件を表示</button>
+      <div id="search-panel" class="search-fields" hidden>
         <label>開始日時 (JST)<input id="filter-from" type="datetime-local" step="1"></label>
         <label>終了日時 (JST)<input id="filter-to" type="datetime-local" step="1"></label>
         <div class="filter-options">
@@ -36,7 +37,7 @@
       </div>
       <div class="list-caption"><span>撮影日時</span><span>前 / 後 / GPS</span></div>
       <div id="record-list" class="record-list"><div class="empty-state">Event・Normal・Triplapseの親フォルダーを選択します</div></div>
-      <div class="library-footer"><span id="gap-summary">録画間の空白を検出します</span><button id="copy-open" class="text-button">SDカードをコピー</button></div>
+      <div class="library-footer"><span id="gap-summary">録画間の空白を検出します</span></div>
     </aside>
 
     <section class="workspace">
@@ -84,7 +85,7 @@
       </section>
 
       <footer class="action-bar panel">
-        <div class="trim-controls">
+        <div id="trim-panel" class="trim-controls" hidden>
           <div><span class="eyebrow">EXPORT CLIP</span><strong>選択中の録画をトリミング</strong></div>
           <label>開始(秒)<input id="trim-start" type="number" min="0" step="0.1" value="0"></label>
           <label>終了(秒)<input id="trim-end" type="number" min="0" step="0.1" placeholder="動画の終端"></label>

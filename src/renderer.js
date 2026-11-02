@@ -9,7 +9,8 @@ const ui = Object.fromEntries([
   'trim-save', 'notice', 'copy-open', 'copy-dialog', 'copy-source', 'copy-destination',
   'choose-copy-source', 'choose-copy-destination', 'copy-start', 'copy-close',
   'copy-progress', 'copy-percent', 'copy-status', 'copy-errors',
-  'g-chart', 'g-x', 'g-y', 'g-z', 'g-status'
+  'g-chart', 'g-x', 'g-y', 'g-z', 'g-status',
+  'app-layout', 'library-panel', 'search-panel', 'search-toggle', 'trim-panel', 'trim-toggle'
 ].map(id => [id, document.getElementById(id)]));
 
 const state = {
@@ -812,6 +813,22 @@ window.miovuer.onCopyFileError(file => {
   ui['copy-errors'].textContent = state.copyErrors.join('\n');
 });
 
+function togglePanel(panelId, buttonId) {
+  const panel = ui[panelId];
+  panel.hidden = !panel.hidden;
+  ui[buttonId].setAttribute('aria-expanded', String(!panel.hidden));
+  if (buttonId === 'search-toggle') {
+    ui[buttonId].textContent = panel.hidden ? '検索条件を表示' : '検索条件を閉じる';
+  }
+  requestAnimationFrame(() => {
+    drawChart();
+    drawGChart();
+    state.map?.invalidateSize();
+  });
+}
+
+ui['search-toggle'].addEventListener('click', () => togglePanel('search-panel', 'search-toggle'));
+ui['trim-toggle'].addEventListener('click', () => togglePanel('trim-panel', 'trim-toggle'));
 ui['open-source'].addEventListener('click', openSource);
 ui['apply-filter'].addEventListener('click', () => { renderRecordList(); prepareNextRecording(); });
 for (const input of document.querySelectorAll('.category-filter, .camera-options input')) {

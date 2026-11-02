@@ -12,11 +12,37 @@ app.on('browser-window-created', (_event, window) => {
     let exitCode = 1;
     try {
       const result = await window.webContents.executeJavaScript(`(async () => {
+        if (getComputedStyle(ui['library-panel']).display === 'none' ||
+            getComputedStyle(ui['search-panel']).display !== 'none' ||
+            getComputedStyle(ui['trim-panel']).display !== 'none') {
+          throw new Error('Optional panels must start hidden');
+        }
+        ui['search-toggle'].click();
+        ui['trim-toggle'].click();
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        if (getComputedStyle(ui['library-panel']).display === 'none' ||
+            getComputedStyle(ui['trim-panel']).display === 'none' ||
+            getComputedStyle(ui['search-panel']).display === 'none' ||
+            ui['search-toggle'].getAttribute('aria-expanded') !== 'true') {
+          throw new Error('Optional panels did not open');
+        }
+        ui['trim-start'].value = '2';
+        ui['trim-toggle'].click();
+        if (ui['trim-start'].value !== '2' || !ui['trim-panel'].hidden) {
+          throw new Error('Closing trim panel lost input state');
+        }
         await openSource();
         if (!state.groups.length) throw new Error(ui.notice.textContent);
         const autoStarted = state.playing &&
           !ui['video-front'].paused && !ui['video-rear'].paused;
         if (!autoStarted) throw new Error('Opening the folder did not start playback automatically');
+        const filterBefore = ui['filter-front'].checked;
+        ui['search-toggle'].click();
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        if (!state.playing || ui['library-panel'].hidden || !ui['search-panel'].hidden ||
+            ui['filter-front'].checked !== filterBefore) {
+          throw new Error('Closing search changed the library, filters, or playback');
+        }
         const sensorPoints = state.selected.acceleration;
         if (!sensorPoints?.length || ui['g-x'].textContent === '--' ||
             ui['g-chart'].width === 0) throw new Error('G chart did not render without GPS');
