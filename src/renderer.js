@@ -25,7 +25,11 @@ const state = {
   marker: null,
   currentPosition: null,
   copyErrors: [],
-  loadController: null
+  loadController: null,
+  prepared: null,
+  advancing: false,
+  crossfade: null,
+  audioTimer: null
 };
 
 function showNotice(message, type = '') {
@@ -156,6 +160,7 @@ async function openSource() {
     const scan = await window.miovuer.pickRoot();
     if (!scan) return;
     adoptScan(scan);
+    if (state.visibleGroups.length) await selectRecording(state.visibleGroups[0]);
   } catch (error) {
     showNotice(error.message, 'error');
   } finally {
@@ -165,6 +170,11 @@ async function openSource() {
 }
 
 function adoptScan(scan) {
+  state.loadController?.abort();
+  discardPrepared();
+  pause();
+  state.selected = null;
+  state.currentIndex = -1;
   state.root = scan.root;
   state.groups = scan.groups;
   ui['source-name'].textContent = scan.root;
@@ -188,7 +198,7 @@ async function loadVideo(video, filePath, emptyElement, signal) {
   emptyElement.textContent = '動画を準備しています…';
   const url = await window.miovuer.getPlayableFile(filePath);
   signal.throwIfAborted();
-  const camera = video.id === 'video-front' ? '前方' : '後方';
+  const camera = video.id === 'video-front' || video.dataset.camera === 'front' ? '前方' : '後方';
   const filename = filePath.split(/[\\/]/).at(-1);
   await new Promise((resolve, reject) => {
     const done = () => { cleanup(); resolve(); };
@@ -225,7 +235,136 @@ async function loadVideo(video, filePath, emptyElement, signal) {
   emptyElement.hidden = true;
 }
 
-async function selectRecording(group, autoplay = false) {
+function discardPrepared() {
+  cancelCrossfade();
+  const prepared = state.prepared;
+  state.prepared = null;
+  if (!prepared) return;
+  prepared.controller.abort();
+  for (const video of prepared.videos) {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    video.remove();
+  }
+}
+
+function cancelCrossfade() {
+  clearInterval(state.audioTimer);
+  state.audioTimer = null;
+  const fade = state.crossfade;
+  state.crossfade = null;
+  if (fade) {
+    for (const video of fade.prepared.videos) {
+      video.pause();
+      if (video.readyState >= 1) video.currentTime = 0;
+      video.volume = 1;
+      video.muted = true;
+    }
+    fade.prepared.started = false;
+  }
+  ui['video-front'].volume = 1;
+}
+
+function monitorAudioTransition() {
+  clearInterval(state.audioTimer);
+  state.audioTimer = setInterval(() => {
+    const prepared = state.prepared;
+    const primary = state.selected?.front ? ui['video-front'] : ui['video-rear'];
+    if (!state.playing || !prepared?.ready || state.advancing || primary.seeking) return;
+    const remaining = primary.duration - primary.currentTime;
+    if (!state.crossfade && remaining > 0 && remaining <= 0.1 && !prepared.fadeFailed) {
+      const fade = { prepared, running: false };
+      state.crossfade = fade;
+      const muted = ui['mute-toggle'].textContent === '🔇';
+      for (const [index, video] of prepared.videos.entries()) {
+        video.volume = 0;
+        video.muted = index === 1 || muted;
+      }
+      Promise.all(prepared.videos.filter((video, index) =>
+        prepared.group[index === 0 ? 'front' : 'rear']).map(video => video.play())
+      ).then(() => {
+        if (state.crossfade !== fade || state.prepared !== prepared) return;
+        prepared.started = true;
+        fade.running = true;
+      }).catch(error => {
+        if (state.crossfade !== fade) return;
+        cancelCrossfade();
+        prepared.fadeFailed = true;
+        showNotice(`音声の先行再生に失敗しました。通常の自動切り替えを使用します: ${error.message}`, 'error');
+        if (state.playing) monitorAudioTransition();
+      });
+    }
+    const fade = state.crossfade;
+    if (fade?.running) {
+      const progress = Math.min(1, Math.max(0, 1 - remaining / 0.1));
+      ui['video-front'].volume = 1 - progress;
+      fade.prepared.videos[0].volume = progress;
+    }
+  }, 10);
+}
+
+function prepareNextRecording() {
+  const index = state.visibleGroups.findIndex(group => group.id === state.selected?.id);
+  const next = index >= 0 ? state.visibleGroups[index + 1] : null;
+  if (state.prepared?.group.id === next?.id) return;
+  discardPrepared();
+  if (!next) return;
+  const controller = new AbortController();
+  const videos = ['front', 'rear'].map(camera => {
+    const video = document.createElement('video');
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.muted = true;
+    video.hidden = true;
+    video.dataset.camera = camera;
+    ui[`video-${camera}`].parentElement.append(video);
+    return video;
+  });
+  const prepared = { group: next, videos, controller, ready: false };
+  state.prepared = prepared;
+  prepared.promise = Promise.all(videos.map((video, index) =>
+    loadVideo(video, next[index === 0 ? 'front' : 'rear'],
+      document.createElement('div'), controller.signal)
+  )).then(() => {
+    prepared.ready = true;
+    return true;
+  }).catch(error => {
+    if (!controller.signal.aborted) {
+      prepared.error = error;
+      showNotice(`次の録画の先読みに失敗しました: ${error.message}`, 'error');
+    }
+    return false;
+  });
+}
+
+function activatePrepared(prepared) {
+  clearInterval(state.audioTimer);
+  state.audioTimer = null;
+  state.crossfade = null;
+  const muted = ui['video-front'].muted;
+  for (const [index, camera] of ['front', 'rear'].entries()) {
+    const old = ui[`video-${camera}`];
+    old.pause();
+    old.removeAttribute('src');
+    old.load();
+    old.remove();
+    const video = prepared.videos[index];
+    video.id = `video-${camera}`;
+    video.hidden = false;
+    video.muted = camera === 'rear' || muted;
+    video.volume = 1;
+    ui[`video-${camera}`] = video;
+    ui[`${camera}-empty`].hidden = !!prepared.group[camera];
+    ui[`${camera}-empty`].textContent = `${camera === 'front' ? '前方' : '後方'}カメラなし`;
+    bindVideoEvents(video);
+  }
+  state.prepared = null;
+}
+
+async function selectRecording(group, autoplay = true, prepared = null) {
+  if (prepared) activatePrepared(prepared);
+  else discardPrepared();
   state.loadController?.abort();
   const controller = new AbortController();
   state.loadController = controller;
@@ -233,6 +372,7 @@ async function selectRecording(group, autoplay = false) {
   const index = state.visibleGroups.findIndex(item => item.id === group.id);
   if (index >= 0) state.currentIndex = index;
   state.selected = group;
+  state.currentPosition = null;
   state.playing = false;
   ui['play-toggle'].textContent = '▶';
   ui['playback-state'].textContent = '読み込み中';
@@ -244,21 +384,27 @@ async function selectRecording(group, autoplay = false) {
   ui['rear-empty'].textContent = group.rear ? '後方動画を読み込み中…' : '後方カメラなし';
   renderRecordList();
   try {
-    await Promise.all([
-      loadVideo(ui['video-front'], group.front, ui['front-empty'], signal),
-      loadVideo(ui['video-rear'], group.rear, ui['rear-empty'], signal)
-    ]);
+    if (!prepared) {
+      await Promise.all([
+        loadVideo(ui['video-front'], group.front, ui['front-empty'], signal),
+        loadVideo(ui['video-rear'], group.rear, ui['rear-empty'], signal)
+      ]);
+    }
     signal.throwIfAborted();
-    ui['video-front'].muted = false;
+    ui['video-front'].muted = ui['mute-toggle'].textContent === '🔇';
     ui['video-rear'].muted = true;
-    ui['video-front'].currentTime = 0;
-    ui['video-rear'].currentTime = 0;
+    if (!prepared?.started) {
+      ui['video-front'].currentTime = 0;
+      ui['video-rear'].currentTime = 0;
+    }
     ui['playback-state'].textContent = '準備完了';
     ui['gap-label'].textContent = group.gapBeforeMs > 1500 ? `前の録画から ${formatDuration(group.gapBeforeMs / 1000)} の空白` : '';
     updatePlaybackInfo();
     updateTelemetry();
     updateMap();
+    prepareNextRecording();
     if (autoplay) await play();
+    signal.throwIfAborted();
     showNotice('前後動画を読み込みました。録画ファイルは読み取り専用で扱っています。', 'success');
   } catch (error) {
     if (signal.aborted) return;
@@ -279,8 +425,12 @@ async function play() {
     if (state.selected.front) promises.push(ui['video-front'].play());
     if (state.selected.rear) promises.push(ui['video-rear'].play());
     await Promise.all(promises);
+    monitorAudioTransition();
   } catch (error) {
     state.playing = false;
+    cancelCrossfade();
+    ui['video-front'].pause();
+    ui['video-rear'].pause();
     ui['playback-state'].textContent = '再生できません';
     ui['play-toggle'].textContent = '▶';
     showNotice(`再生を開始できませんでした: ${error.message}`, 'error');
@@ -289,6 +439,7 @@ async function play() {
 
 function pause() {
   state.playing = false;
+  cancelCrossfade();
   ui['video-front'].pause();
   ui['video-rear'].pause();
   ui['play-toggle'].textContent = '▶';
@@ -296,6 +447,7 @@ function pause() {
 }
 
 function seekTo(seconds) {
+  cancelCrossfade();
   state.syncing = true;
   for (const video of [ui['video-front'], ui['video-rear']]) {
     if (video.src && Number.isFinite(video.duration)) {
@@ -305,6 +457,7 @@ function seekTo(seconds) {
   state.syncing = false;
   updatePlaybackInfo();
   updateTelemetry();
+  if (state.playing) monitorAudioTransition();
 }
 
 function updatePlaybackInfo() {
@@ -423,7 +576,9 @@ function updateMap() {
   if (!state.map) {
     ui.map.innerHTML = '';
     ui.map.dataset.mapReady = 'true';
-    state.map = window.L.map(ui.map, { zoomControl: true, attributionControl: true });
+    const firstPoint = state.selected.gps[0];
+    state.map = window.L.map(ui.map, { zoomControl: true, attributionControl: true })
+      .setView([firstPoint.latitude, firstPoint.longitude], 14, { animate: false });
     window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
@@ -435,11 +590,19 @@ function updateMap() {
     state.route = window.L.polyline(route, { color: '#ff843c', weight: 3, opacity: 0.8 }).addTo(state.map);
     state.routeId = state.selected.id;
   }
-  if (!state.currentPosition) return;
+  if (!state.currentPosition) {
+    if (state.marker) {
+      state.marker.remove();
+      state.marker = null;
+    }
+    ui['open-map'].disabled = true;
+    return;
+  }
   const location = [state.currentPosition.latitude, state.currentPosition.longitude];
   if (!state.marker) state.marker = window.L.circleMarker(location, { radius: 6, color: '#f4e3d6', fillColor: '#ff843c', fillOpacity: 1 }).addTo(state.map);
   else state.marker.setLatLng(location);
-  state.map.setView(location, Math.max(state.map.getZoom(), 14), { animate: false });
+  const zoom = state.map.getZoom();
+  state.map.setView(location, Number.isFinite(zoom) ? Math.max(zoom, 14) : 14, { animate: false });
   ui['open-map'].disabled = false;
 }
 
@@ -451,7 +614,9 @@ function moveSelection(direction) {
 }
 
 async function advanceAfterEnd() {
-  const index = state.currentIndex + 1;
+  if (state.advancing) return;
+  const autoplay = state.playing;
+  const index = state.visibleGroups.findIndex(group => group.id === state.selected?.id) + 1;
   if (index >= state.visibleGroups.length) {
     pause();
     ui['playback-state'].textContent = '再生完了';
@@ -461,7 +626,33 @@ async function advanceAfterEnd() {
   const next = state.visibleGroups[index];
   const gap = Math.max(0, next.start - (state.selected.start + state.selected.duration * 1000));
   ui['gap-label'].textContent = gap > 1500 ? `録画空白 ${formatDuration(gap / 1000)} を越えて次へ` : '次の録画へ';
-  await selectRecording(next, true);
+  state.advancing = true;
+  try {
+    let prepared = state.prepared;
+    if (prepared?.group.id !== next.id) {
+      prepareNextRecording();
+      prepared = state.prepared;
+    }
+    if (prepared) {
+      const currentId = state.selected?.id;
+      if (!prepared.ready) {
+        ui['playback-state'].textContent = '次の録画を準備中';
+        await prepared.promise;
+      }
+      if (state.prepared !== prepared || state.selected?.id !== currentId) return;
+      if (autoplay && !state.playing) return;
+      if (!prepared.ready) throw prepared.error ?? new Error('次の録画を準備できませんでした。');
+      await selectRecording(next, autoplay, prepared);
+    } else {
+      await selectRecording(next, autoplay);
+    }
+  } catch (error) {
+    pause();
+    ui['playback-state'].textContent = '読み込みエラー';
+    showNotice(error.message, 'error');
+  } finally {
+    state.advancing = false;
+  }
 }
 
 function handleTimeUpdate(event) {
@@ -561,9 +752,9 @@ window.miovuer.onCopyFileError(file => {
 });
 
 ui['open-source'].addEventListener('click', openSource);
-ui['apply-filter'].addEventListener('click', renderRecordList);
+ui['apply-filter'].addEventListener('click', () => { renderRecordList(); prepareNextRecording(); });
 for (const input of document.querySelectorAll('.category-filter, .camera-options input')) {
-  input.addEventListener('change', renderRecordList);
+  input.addEventListener('change', () => { renderRecordList(); prepareNextRecording(); });
 }
 ui['play-toggle'].addEventListener('click', () => state.playing ? pause() : play());
 ui['previous'].addEventListener('click', () => moveSelection(-1));
@@ -571,16 +762,20 @@ ui['next'].addEventListener('click', () => state.playing ? advanceAfterEnd() : m
 ui['mute-toggle'].addEventListener('click', () => {
   ui['video-front'].muted = !ui['video-front'].muted;
   ui['mute-toggle'].textContent = ui['video-front'].muted ? '🔇' : '🔊';
+  if (state.prepared) state.prepared.videos[0].muted = ui['video-front'].muted;
 });
 ui.seek.addEventListener('input', () => {
   const video = state.selected?.front ? ui['video-front'] : ui['video-rear'];
   if (video && Number.isFinite(video.duration)) seekTo(Number(ui.seek.value) / 1000 * video.duration);
 });
-for (const video of [ui['video-front'], ui['video-rear']]) {
+function bindVideoEvents(video) {
   video.addEventListener('timeupdate', handleTimeUpdate);
+  video.addEventListener('ended', () => {
+    const primary = state.selected?.front ? ui['video-front'] : ui['video-rear'];
+    if (video === primary && state.playing) advanceAfterEnd();
+  });
 }
-ui['video-front'].addEventListener('ended', () => { if (state.selected?.front) advanceAfterEnd(); });
-ui['video-rear'].addEventListener('ended', () => { if (!state.selected?.front && state.selected?.rear) advanceAfterEnd(); });
+for (const video of [ui['video-front'], ui['video-rear']]) bindVideoEvents(video);
 ui['trim-save'].addEventListener('click', saveTrim);
 ui['copy-open'].addEventListener('click', openCopyDialog);
 ui['copy-close'].addEventListener('click', () => ui['copy-dialog'].close());
